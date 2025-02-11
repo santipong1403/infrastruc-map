@@ -24,8 +24,7 @@ pool.connect()
     .then(() => console.log('Database connected successfully'))
     .catch((error) => {
         console.error('Failed to connect to the database:', error);
-        process.exit(1); // หยุดแอ
-        // ปหากการเชื่อมต่อล้มเหลว
+        process.exit(1);
     });
 
 // Route: ดึงข้อมูลของ 'ประตูระบายน้ำ'
@@ -53,12 +52,12 @@ app.get('/waterlevel_province', async () => {
     }
 });
 
-// Route: ดึงข้อมูล 'ฝาย'
+// Route: ดึงข้อมูล 'ฝาย' (รวมถึงคำที่มี "ฝาย" เป็นส่วนหนึ่ง)
 app.get('/weir', async () => {
     try {
         const result = await pool.query(
-            'SELECT * FROM infrastruc WHERE infrastruc_type = $1',
-            ['ฝาย']
+            'SELECT * FROM infrastruc WHERE infrastruc_type LIKE $1',
+            ['%ฝาย%'] // ค้นหาคำที่มี "ฝาย" เป็นส่วนหนึ่ง
         );
         return result.rows;
     } catch (error) {
@@ -67,12 +66,12 @@ app.get('/weir', async () => {
     }
 });
 
-// Route: ดึงข้อมูล 'สถานีสูบน้ำ'
+// Route: ดึงข้อมูล 'สถานีสูบน้ำ' และ 'โรงสูบน้ำ'
 app.get('/pumpstation', async () => {
     try {
         const result = await pool.query(
-            'SELECT * FROM infrastruc WHERE infrastruc_type = $1',
-            ['สถานีสูบน้ำ']
+            'SELECT * FROM infrastruc WHERE infrastruc_type LIKE $1 OR infrastruc_type LIKE $2',
+            ['%สถานีสูบน้ำ%', '%โรงสูบน้ำ%'] // ค้นหาคำที่มี "สถานีสูบน้ำ" หรือ "โรงสูบน้ำ"
         );
         return result.rows;
     } catch (error) {
@@ -81,20 +80,20 @@ app.get('/pumpstation', async () => {
     }
 });
 
-// Route: ดึงจำนวนสถานีของแต่ละประเภท
+// Route: ดึงจำนวนสถานีของแต่ละประเภท (รวมคำที่เกี่ยวข้อง)
 app.get('/station_count', async () => {
     try {
         const resultInfrastruc = await pool.query(
-            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type = $1',
-            ['ประตูระบายน้ำ']
+            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type LIKE $1 OR infrastruc_type LIKE $2',
+            ['%ประตูระบายน้ำ%','%ปตร.']
         );
         const resultWeir = await pool.query(
-            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type = $1',
-            ['ฝาย']
+            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type LIKE $1',
+            ['%ฝาย%']
         );
         const resultPumpstation = await pool.query(
-            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type = $1',
-            ['สถานีสูบน้ำ']
+            'SELECT COUNT(*) FROM infrastruc WHERE infrastruc_type LIKE $1 OR infrastruc_type LIKE $2',
+            ['%สถานีสูบน้ำ%', '%โรงสูบน้ำ%']
         );
 
         return {
@@ -121,6 +120,8 @@ app.get('/latitude', async () => {
         return { error: 'Failed to fetch latitude data from the database' };
     }
 });
+
+// Route: ดึงข้อมูลรายวันของน้ำฝน
 app.get('/rainfall_daily', async (req) => {
     try {
         const { startDate, endDate } = req.query;
@@ -149,7 +150,29 @@ app.get('/rainfall_daily', async (req) => {
     }
 });
 
+// Route: ดึงข้อมูลสำหรับแสดง Chart รวมประเภทข้อมูล (รวมโรงสูบน้ำ)
+app.get('/infrastructest_chart', async () => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                infrastruc_id,
+                COUNT(CASE WHEN infrastruc_type LIKE '%ฝาย%' THEN 1 END) AS weir_count,
+                COUNT(CASE WHEN infrastruc_type LIKE '%สถานีสูบน้ำ%' OR infrastruc_type LIKE '%โรงสูบน้ำ%' THEN 1 END) AS pumpstation_count,
+                COUNT(CASE WHEN infrastruc_type LIKE '%ประตูระบายน้ำ%' THEN 1 END) AS infrastruc_count
+            FROM infrastruc
+            WHERE infrastruc_id BETWEEN '1' AND '17'
+            GROUP BY infrastruc_id
+            ORDER BY infrastruc_id
+        `);
+
+        return result.rows;
+    } catch (error) {
+        console.error('Error fetching infrastructest chart data:', error);
+        return { error: 'Failed to fetch infrastructest chart data from the database' };
+    }
+});
+
 
 // เริ่มเซิร์ฟเวอร์
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => console.log(`API is running at http://localhost:${PORT}`));
